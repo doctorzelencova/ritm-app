@@ -1,4 +1,3 @@
-// Public, nonsecret endpoint configuration. No backend URL has been provided.
-// Set API_BASE to the future trusted HTTPS backend origin (optional path prefix).
-// Empty means deliberately disconnected; never falls back to demo data.
-window.RITM_CONFIG = Object.freeze({API_BASE: ''});
+// Public, nonsecret HTTPS endpoint. Personal records and credentials stay on the server.
+// The backend validates Telegram initData and requires an owner-only session.
+window.RITM_CONFIG = Object.freeze({API_BASE: 'https://157.22.179.192'});

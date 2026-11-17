@@ -9,6 +9,9 @@
   const configuredBase = window.RITM_CONFIG?.API_BASE || '';
   const text = (tag, cls, value) => { const n=document.createElement(tag); n.className=cls; n.textContent=value; return n; };
   const number = value => value === null || value === undefined ? '—' : fmt.format(Number(value));
+  const isRange = goal => goal !== null && typeof goal === 'object';
+  const goalScale = goal => isRange(goal) ? Number(goal.max) : Number(goal);
+  const rangeLabel = (goal, unit) => 'диапазон '+goal.min+'–'+goal.max+' '+unit;
   function button(label, action, cls='small-button') { const n=text('button',cls,label); n.type='button'; n.onclick=()=>run(action); return n; }
   function notice(message) { $('storage-warning').textContent=message; $('storage-warning').hidden=false; }
   async function api(path, body) {
@@ -61,8 +64,14 @@
       const nutrient=totals.macros[key],value=nutrient.known_total,goal=goals[key];
       const box=text('div','macro',''); box.append(text('div','macro-name',name));
       const line=text('div','macro-number',number(value));line.append(text('span','macro-unit',unit));box.append(line);
-      box.append(text('div','macro-target',goal===null?'цель не задана':'из '+number(goal)+' '+unit));
-      const track=text('div','bar-track',''), fill=text('div','bar-fill','');fill.style.width=goal!==null&&Number(goal)>0&&value!==null?Math.min(100,Number(value)/Number(goal)*100)+'%':'0%';track.append(fill);box.append(track);
+      box.append(text('div','macro-target',goal===null?'цель не задана':isRange(goal)?rangeLabel(goal,unit):'из '+number(goal)+' '+unit));
+      const track=text('div','bar-track',''), fill=text('div','bar-fill',''),scale=goalScale(goal);fill.style.width=scale>0&&value!==null?Math.min(100,Number(value)/scale*100)+'%':'0%';track.append(fill);
+      if(isRange(goal)) {
+        track.setAttribute('aria-label',rangeLabel(goal,unit)+'; верхняя граница — только шкала');
+        track.style.position='relative';
+        const threshold=text('span','range-threshold','');threshold.style.position='absolute';threshold.style.left=(scale>0?Number(goal.min)/scale*100:0)+'%';threshold.style.top='0';threshold.style.height='100%';threshold.style.borderLeft='2px solid currentColor';threshold.title='Нижняя граница '+goal.min+' '+unit;track.append(threshold);
+      }
+      box.append(track);
       if(nutrient.missing_entries)box.append(text('div','macro-target','Неизвестно: '+nutrient.missing_entries));
       if(nutrient.estimated_entries)box.append(text('div','macro-target','Есть оценочные значения'));
       $('macros').append(box);
@@ -81,8 +90,9 @@
     $('ring-fill').style.strokeDashoffset=String(276.46*(1-(percent||0)/100));$('daily-ring').setAttribute('aria-label',done+' записанных выполнений из '+active.length);
     $('day-message').textContent='Нет отметки — не значит не выполнено.';$('day-short').textContent=selected===today?'Сегодня':selected;
     const ml=totals.water.total_ml,goal=goals.water_ml;
-    $('water-value').textContent=ml===null?'—':number(Number(ml)/1000)+' л';$('water-goal').textContent=goal===null?'цель не задана':'/ '+number(Number(goal)/1000)+' л';
-    const level=137-(goal!==null&&Number(goal)>0&&ml!==null?Math.min(1,Number(ml)/Number(goal)):0)*112;
+    $('water-value').textContent=ml===null?'—':number(Number(ml)/1000)+' л';$('water-goal').textContent=goal===null?'цель не задана':isRange(goal)?rangeLabel(goal,'мл'):'/ '+number(Number(goal)/1000)+' л';
+    const scale=goalScale(goal),level=137-(scale>0&&ml!==null?Math.min(1,Number(ml)/scale):0)*112;
+    $('water-fill').setAttribute('aria-label',isRange(goal)?rangeLabel(goal,'мл')+'; верхняя граница — только шкала':'Записанная вода');
     $('water-fill').setAttribute('y',level);$('water-fill').setAttribute('height',142-level);$('water-wave').setAttribute('d',`M29 ${level}q20-5 41 0t42 0v5H29Z`);
     $('water-message').textContent=ml===null?'Нет записей о воде':'Записано: '+water.length+' событий';$('water-add-label').textContent='+ 250 мл';$('undo-water').disabled=!water.length;
     $('meals-list').replaceChildren();
