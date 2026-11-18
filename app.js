@@ -25,8 +25,8 @@
   async function mutate(path, fields) {
     // A network-ambiguous retry retains the exact request ID and payload; no fresh ID on retry.
     const payload={...fields,request_id:crypto.randomUUID()};
-    pending={path,payload};
-    try { const result=await api(path,payload); pending=null; return result; }
+    pending={path,payload}; retry.hidden=false;
+    try { const result=await api(path,payload); pending=null; retry.hidden=true; return result; }
     catch(error) { notice(error.message+' Для повтора последней операции нажми «Повторить запись».'); throw error; }
   }
   async function run(action) {
@@ -64,7 +64,9 @@
       const nutrient=totals.macros[key],value=nutrient.known_total,goal=goals[key];
       const box=text('div','macro',''); box.append(text('div','macro-name',name));
       const line=text('div','macro-number',number(value));line.append(text('span','macro-unit',unit));box.append(line);
-      box.append(text('div','macro-target',goal===null?'цель не задана':isRange(goal)?rangeLabel(goal,unit):'из '+number(goal)+' '+unit));
+      const target=text('div','macro-target',goal===null?'цель не задана':'Цель');
+      if(goal!==null)target.append(text('span','target-value',isRange(goal)?goal.min+'–'+goal.max+' '+unit:number(goal)+' '+unit));
+      box.append(target);
       const track=text('div','bar-track',''), fill=text('div','bar-fill',''),scale=goalScale(goal);fill.style.width=scale>0&&value!==null?Math.min(100,Number(value)/scale*100)+'%':'0%';track.append(fill);
       if(isRange(goal)) {
         track.setAttribute('aria-label',rangeLabel(goal,unit)+'; верхняя граница — только шкала');
@@ -72,11 +74,8 @@
         const threshold=text('span','range-threshold','');threshold.style.position='absolute';threshold.style.left=(scale>0?Number(goal.min)/scale*100:0)+'%';threshold.style.top='0';threshold.style.height='100%';threshold.style.borderLeft='2px solid currentColor';threshold.title='Нижняя граница '+goal.min+' '+unit;track.append(threshold);
       }
       box.append(track);
-      if(nutrient.missing_entries)box.append(text('div','macro-target','Неизвестно: '+nutrient.missing_entries));
-      if(nutrient.estimated_entries)box.append(text('div','macro-target','Есть оценочные значения'));
       $('macros').append(box);
     }
-    $('nutrition-note').textContent='Только известные суммы записей · полнота дня не подтверждена';
     const active=habits.filter(h=>h.active),done=active.filter(h=>h.completed===true).length,percent=active.length?Math.round(done/active.length*100):null;
     $('habit-list').replaceChildren();
     for(const h of active) {
@@ -86,15 +85,17 @@
       $('habit-list').append(b);
     }
     $('habits-empty').hidden=active.length>0;$('habit-counter').textContent=done+' / '+active.length;
+    $('habit-foot').hidden=!active.length;$('daily-progress').hidden=!active.length;
+    $('manage-habits').textContent=active.length?'Изменить':'+ Добавить';
     $('day-percent').textContent=percent===null?'—':percent+'%';$('day-count').textContent=done+' из '+active.length+' привычек';
     $('ring-fill').style.strokeDashoffset=String(276.46*(1-(percent||0)/100));$('daily-ring').setAttribute('aria-label',done+' записанных выполнений из '+active.length);
     $('day-message').textContent='Нет отметки — не значит не выполнено.';$('day-short').textContent=selected===today?'Сегодня':selected;
     const ml=totals.water.total_ml,goal=goals.water_ml;
-    $('water-value').textContent=ml===null?'—':number(Number(ml)/1000)+' л';$('water-goal').textContent=goal===null?'цель не задана':isRange(goal)?rangeLabel(goal,'мл'):'/ '+number(Number(goal)/1000)+' л';
+    $('water-value').textContent=ml===null?'—':number(Number(ml)/1000)+' л';$('water-goal').textContent=goal===null?'цель не задана':isRange(goal)?(Number(goal.min)===Number(goal.max)?'Цель '+number(goal.min)+' мл':rangeLabel(goal,'мл')):'/ '+number(Number(goal)/1000)+' л';
     const scale=goalScale(goal),level=137-(scale>0&&ml!==null?Math.min(1,Number(ml)/scale):0)*112;
     $('water-fill').setAttribute('aria-label',isRange(goal)?rangeLabel(goal,'мл')+'; верхняя граница — только шкала':'Записанная вода');
     $('water-fill').setAttribute('y',level);$('water-fill').setAttribute('height',142-level);$('water-wave').setAttribute('d',`M29 ${level}q20-5 41 0t42 0v5H29Z`);
-    $('water-message').textContent=ml===null?'Нет записей о воде':'Записано: '+water.length+' событий';$('water-add-label').textContent='+ 250 мл';$('undo-water').disabled=!water.length;
+    $('water-message').textContent=ml===null?'Нет записей о воде':'Записано: '+water.length+' событий';$('water-add-label').textContent='250 мл';$('undo-water').disabled=!water.length;
     $('meals-list').replaceChildren();
     if(!meals.length)$('meals-list').append(text('p','dialog-help','Нет записей о еде. Добавляй еду в личном диалоге с агентом.'));
     for(const meal of meals) {
@@ -114,7 +115,9 @@
     }
   }
   function renderWeek(history,monday) {
-    $('week-period').textContent=monday+' — '+shifted(monday,6);$('week-chart').replaceChildren();
+    const dates=new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'short',timeZone:'Europe/Moscow'});
+    const start=new Date(monday+'T12:00:00Z'),end=new Date(shifted(monday,6)+'T12:00:00Z');
+    $('week-period').textContent=dates.formatRange?dates.formatRange(start,end):dates.format(start)+' — '+dates.format(end);$('week-chart').replaceChildren();
     $('week-percent').textContent='—';$('week-caption').textContent='Только дни с записями; отсутствие данных не равно нулю.';$('week-demo').hidden=true;
     for(let i=0;i<7;i++) {
       const key=shifted(monday,i),entry=history.find(x=>x.day===key),count=entry?.habits.active_count,done=entry?.habits.completed_count,pct=count?Math.round(done/count*100):null;
@@ -156,7 +159,7 @@
   $('undo-water').onclick=()=>run(()=>mutate(`/api/water/${current.water.at(-1).id}/undo`,{}));
   $('manage-habits').onclick=manage;$('close-manage').onclick=()=>$('manage-dialog').close();$('save-habits').textContent='Закрыть';$('save-habits').onclick=()=>$('manage-dialog').close();
   $('add-habit-form').onsubmit=e=>{e.preventDefault();run(async()=>{await mutate('/api/habits',{name:$('new-habit').value,start_date:selected});$('new-habit').value='';$('manage-dialog').close();});};
-  const retry=button('Повторить запись',async()=>{});retry.onclick=async()=>{if(!pending||busy)return;busy=true;try{await api(pending.path,pending.payload);pending=null;$('storage-warning').hidden=true;await refresh();}catch(e){notice(e.message);}finally{busy=false;}};
+  const retry=button('Повторить запись',async()=>{});retry.id='retry-entry';retry.hidden=true;retry.onclick=async()=>{if(!pending||busy)return;busy=true;try{await api(pending.path,pending.payload);pending=null;retry.hidden=true;$('storage-warning').hidden=true;await refresh();}catch(e){notice(e.message);}finally{busy=false;}};
   $('storage-warning').after(retry);
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh();});window.addEventListener('focus',refresh);setInterval(()=>{if(!document.hidden)refresh();},15000);
   load();
